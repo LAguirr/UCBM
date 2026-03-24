@@ -1,0 +1,14 @@
+MNIST_UCBM_Project/
+├── data/                    # MNIST dataset (Auto-downloaded)
+├── models/                  # Storage for .pt and .pth files
+├── mnist_activations/       # Directory for pre-calculated concept sims
+├── core/
+│   ├── __init__.py
+│   ├── backbone.py          # Net, FeatureExtractorG, ClassifierH
+│   ├── dataset_utils.py     # PDataset, load_data, MemTensorDataset logic
+│   └── ucbm_logic.py        # JumpReLU, Classifier, and the UCBM class
+├── utils/
+│   ├── __init__.py
+│   ├── concept_ops.py       # raw_concept_sims, Craft integration
+│   └── visualization.py     # visualize_image_concepts
+└── main.py                  # The execution script (Training & Evaluation)

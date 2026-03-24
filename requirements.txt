@@ -1,0 +1,10 @@
+git+https://github.com/LAguirr/Craft.git
+opencv-python
+torcheval
+datautils
+numpy
+matplotlib
+torch
+cv2
+torchvision
+sklearn
