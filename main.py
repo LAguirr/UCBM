@@ -9,6 +9,13 @@ from utils.visualization import visualize_image_concepts
 from craft.craft_torch import Craft
 import os
 from pathlib import Path
+import torch.nn.functional as F
+from datetime import datetime
+import json
+from os import path, makedirs
+
+
+
 
 script_dir = Path(__file__).resolve().parent
 models_dir = script_dir / 'models'
@@ -45,16 +52,58 @@ if __name__ == "__main__":
     # 3. Concept Discovery (CRAFT)
     print("Discovering concepts with CRAFT....")
     images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
-    craft = Craft(input_to_latent=g, latent_to_logit=lambda x: x, number_of_concepts=15, patch_size=7, device=device)
+
+    patch_size = 7
+    craft = Craft(input_to_latent=g, latent_to_logit=lambda x: x, number_of_concepts=15, patch_size=patch_size, device=device)
     crops, crops_u, w = craft.fit(images_batch)
     np.save(script_dir /"craft_concept_bank.npy", w)
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
+    epochs =  35
+    lam_gate =  0
+    lam_w = 0
+    dropout_p = 0.0 #0.2
+    lr = 0.01
+    cls_save_name= "topk_seed_0"
+    scale_choose= 'learn' #'no'
+    bias_choose='learn' #-- normalize_concepts
+    normalize_concepts = True # Boolean
+    relu='ReLU'
+    k = -1
+    seed = 0
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dataset = "MNIST"
+    cls_save_name = "topk_seed_0"
+    h = np.load("craft_concept_bank.npy")
+    h_tensor = torch.tensor(h, dtype=torch.float32)
+    h_tensor = F.normalize(h_tensor, p=2, dim=1) # Normalización L2 estricta
+    h = h_tensor.numpy()
+
     print("-----------------------------------------       Training UCBM....")
-    ph_cbm = UCBM(backbone=g, h=w, batch_size=64, epochs=1, lam_gate=0.01, lam_w=0.01, dropout_p=0, learning_rate=0.01, relu="ReLU", scale_mode="no", bias_mode="no", normalize=False, k=-1, device=device)
+    ph_cbm = UCBM(backbone=g, h=h, batch_size=64, epochs=epochs, lam_gate=lam_gate, lam_w=lam_w, dropout_p=dropout_p, learning_rate=lr, relu=relu, scale_mode=scale_choose, bias_mode=bias_choose, normalize=normalize_concepts, k=k, device=device)
     ph_cbm.fit(train_ds, "./mnist_activations")
+
+    save_name = cls_save_name # author says is "topk_seed_0"
+    if save_name == "":
+        save_name = f"class_{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
+    else:
+        save_name += f"-{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
+    class_path = "Model" #class_path = path.join(plotter.get_classifier_path(), args.concept_data, save_name)
+    makedirs(class_path, exist_ok=True)
+    ph_cbm.save_to_file(class_path, "classifier.pth")
+
+    metrics = ["acc", "auprc", "auprc_pc", "auroc"]
+    act_path = "./mnist_activations"
+    os.makedirs(act_path, exist_ok=True)
+
+    info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
+    print(json.dumps(info_dict, indent=2))
+    with open(path.join(class_path, "info.json"), "w") as f:
+        json.dump(info_dict, f, indent=2)
+    print(f"Saved information to {class_path}")
     print("-----------------------------------------        UCBM Trained!!")
+    
     # 5. Visualize
-    #visualize_image_concepts(ph_cbm, test_ds)
+    visualize_image_concepts(ph_cbm, test_ds)
