@@ -13,7 +13,8 @@ import torch.nn.functional as F
 from datetime import datetime
 import json
 from os import path, makedirs
-
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -53,14 +54,14 @@ if __name__ == "__main__":
     images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
 
     patch_size = 7
-    craft = Craft(input_to_latent=g, latent_to_logit=lambda x: x, number_of_concepts=15, patch_size=patch_size, device=device)
+    craft = Craft(input_to_latent=g, latent_to_logit=lambda x: x, number_of_concepts=50, patch_size=patch_size, device=device)
     crops, crops_u, w = craft.fit(images_batch)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
-    epochs =  1
+    epochs =  40
     lam_gate =  0
     lam_w = 0
     dropout_p = 0.0 #0.2
@@ -105,4 +106,4 @@ if __name__ == "__main__":
     print("-----------------------------------------        UCBM Trained!!")
     
     # 5. Visualize
-    #visualize_image_concepts(ph_cbm, test_ds)   
+    visualize_image_concepts(ph_cbm, test_ds)   

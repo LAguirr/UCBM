@@ -3,7 +3,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 
-def visualize_image_concepts(model, dataset, image_index=None, top_k=5, patch_size=15):
+def visualize_image_concepts(model, dataset, image_index=None, top_k=4, patch_size=1):
     if image_index is None: image_index = np.random.randint(len(dataset))
     image, label = dataset[image_index]
     image_input = image.unsqueeze(0).to(model._device)
