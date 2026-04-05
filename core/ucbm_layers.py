@@ -365,7 +365,9 @@ class UCBM:
         y_pred = []
         y_true = []
         for X_batch, y_batch in data_loader:
-            y_predb, _, _ = self._classifier(X_batch.to(self._device))
+            X_batch = X_batch.to(self._device)
+            X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
+            y_predb, _, _ = self._classifier(X_batch)
             if self._multilabel:
                 y_predb = torch.sigmoid(y_predb)
             y_predb = y_predb.cpu()
@@ -405,6 +407,7 @@ class UCBM:
 
                 else:
                     metrics[me] = multiclass_auprc(y_pred, y_true).item()
+
             elif me == "auprc_pc" and self._multilabel:
                 n = 500
                 auprc_pc = []
