@@ -2,11 +2,11 @@ import torch
 import numpy as np
 from torchvision import datasets, transforms
 from torch.utils.data import Subset, DataLoader
-from core.backbone import Net, FeatureExtractorG, train_backbone
+from core.backbone import Net,ClassifierH, FeatureExtractorG, train_backbone
 from core.ucbm_layers import UCBM
 from core.dataset_utils import load_data, get_mnist_loaders
 from utils.visualization import visualize_image_concepts
-from craft.craft_torch import Craft
+from mycraft.craft_torch import Craft
 import os
 from pathlib import Path
 import torch.nn.functional as F
@@ -48,6 +48,7 @@ if __name__ == "__main__":
         print("Model trained!!")
     
     g = FeatureExtractorG(backbone).to(device)
+    h = ClassifierH(g).to(device)
 
     # 3. Concept Discovery (CRAFT)
     print("Discovering concepts with CRAFT....")
@@ -55,14 +56,14 @@ if __name__ == "__main__":
 
     patch_size = 7
     n_concepts = 80
-    craft = Craft(input_to_latent=g, latent_to_logit=lambda x: x, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
-    crops, crops_u, w = craft.fit(images_batch)
+    craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
+    crops, crops_u, w = craft.fit(images_batch, gradcam=True)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
-    epochs =  30
+    epochs =  20
     lam_gate =  0
     lam_w = 0
     dropout_p = 0.0 #0.2
@@ -71,8 +72,8 @@ if __name__ == "__main__":
     scale_choose= 'learn' #'no'
     bias_choose='learn' #-- normalize_concepts
     normalize_concepts = True # Boolean
-    relu='no'
-    k = 7
+    relu='ReLU'
+    k = -1
     seed = 0
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dataset = "MNIST"

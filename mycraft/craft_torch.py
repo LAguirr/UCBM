@@ -13,8 +13,8 @@ import numpy as np
 from sklearn.decomposition import NMF
 from sklearn.exceptions import NotFittedError
 
-from .sobol.sampler import HaltonSequence
-from .sobol.estimators import JansenEstimator
+#from .sobol.sampler import HaltonSequence
+#from .sobol.estimators import JansenEstimator
 
 from pytorch_grad_cam import GradCAMPlusPlus
 
@@ -244,14 +244,14 @@ class Craft(BaseConceptExtractor):
 
         image_size = inputs.shape[2]
 
-        if not filter_patches and not gradcam:
-            print("Extracting patches from input data...")  
-            # extract patches from the input data, keep patches on cpu
-            strides = int(self.patch_size * 0.80)
+        
+        print("Extracting patches from input data...")  
+        # extract patches from the input data, keep patches on cpu
+        strides = int(self.patch_size * 0.80)
 
-            patches = torch.nn.functional.unfold(inputs, kernel_size=self.patch_size, stride=strides)
-            num_channels = inputs.shape[1]
-            patches = patches.transpose(1, 2).contiguous().view(-1, num_channels, self.patch_size, self.patch_size)
+        patches = torch.nn.functional.unfold(inputs, kernel_size=self.patch_size, stride=strides)
+        num_channels = inputs.shape[1]
+        patches = patches.transpose(1, 2).contiguous().view(-1, num_channels, self.patch_size, self.patch_size)
 
         if filter_patches:
             # --- NEW: Filter out black patches ---
@@ -262,7 +262,7 @@ class Craft(BaseConceptExtractor):
             patch_intensities = patches.sum(dim=(1, 2, 3))
 
             # Define a threshold (0.0 for perfectly black, or slightly higher like 0.01 to remove noise)
-            threshold = 40
+            threshold = 20
             valid_mask = patch_intensities > threshold
 
             # Filter the patches
@@ -276,7 +276,7 @@ class Craft(BaseConceptExtractor):
         if gradcam: 
             print("Computing Grad-CAM...")
             self.full_model.eval()
-            target_layer = [self.full_model.conv2]
+            target_layer = [self.full_model.g]  # Example target layer, adjust as needed
 
             patches = self.get_gradcam_crops(
                 inputs,
