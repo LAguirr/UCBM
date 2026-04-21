@@ -37,27 +37,30 @@ if __name__ == "__main__":
     backbone = Net()
     models_dir = BASE_DIR / 'models'
 
-    model_path = models_dir /'mnist_cnn.pt'
+    model_path = models_dir /'mnist_cnnPytorch.pt'
     if os.path.exists(model_path):
         backbone.load_state_dict(torch.load(model_path, map_location=device))
         print("Model charged!. ")
     else:
         #train the model
         print("Training the model....")
-        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device, epochs=5)
+        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device, epochs=10)
         print("Model trained!!")
     
     g = FeatureExtractorG(backbone).to(device)
     h = ClassifierH(g).to(device)
 
     # 3. Concept Discovery (CRAFT)
-    print("Discovering concepts with CRAFT....")
-    images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
 
     patch_size = 7
-    n_concepts = 50
+    n_concepts = 8
+
+    print(f"Discovering {n_concepts} concepts with CRAFT....")
+
+    images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
+
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
-    crops, crops_u, w = craft.fit(images_batch, gradcam=True)
+    crops, crops_u, w = craft.fit(images_batch)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)

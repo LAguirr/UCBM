@@ -17,20 +17,14 @@ class Net(nn.Module):
         self.conv1 = nn.Conv2d(1, 32, 3)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(32, 64, 3)
-        #self.fc1 = nn.Linear(64 * 5 * 5, 120)
-        #self.fc2 = nn.Linear(120, 84)
-        #self.fc3 = nn.Linear(84, 10)
         self.head = nn.Linear(64, 10)
 
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        #x = torch.flatten(x, 1) # flatten all dimensions except batch
-        #x = F.relu(self.fc1(x))
-        #features = F.relu(self.fc2(x))
-        #x = self.fc3(features)
-        #return x
         x = x.mean(dim=[2,3]) # global average pooling
+        #x_max = x.amax(dim=[2, 3]) #<--- Aidar
+        #x = torch.cat([x_mean, x_max], dim=1) #<--- Aidar
         return self.head(x)
 
 class FeatureExtractorG(nn.Module):
@@ -113,7 +107,7 @@ def test(model, test_loader, device):
 
 def train_backbone(model, train_loader, val_loader, test_loader, device, epochs=5):
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     print(f"Starting Backbone Training for {epochs} epochs...")
     
