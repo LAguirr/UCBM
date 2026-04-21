@@ -37,14 +37,14 @@ if __name__ == "__main__":
     backbone = Net()
     models_dir = BASE_DIR / 'models'
 
-    model_path = models_dir /'mnist_cnnPytorch.pt'
+    model_path = models_dir /'mnist_cnn.pt'
     if os.path.exists(model_path):
         backbone.load_state_dict(torch.load(model_path, map_location=device))
         print("Model charged!. ")
     else:
         #train the model
         print("Training the model....")
-        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device, epochs=1)
+        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device, epochs=5)
         print("Model trained!!")
     
     g = FeatureExtractorG(backbone).to(device)
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
 
     patch_size = 7
-    n_concepts = 80
+    n_concepts = 50
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
     crops, crops_u, w = craft.fit(images_batch, gradcam=True)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
-    epochs =  20
+    epochs = 5
     lam_gate =  0
     lam_w = 0
     dropout_p = 0.0 #0.2
