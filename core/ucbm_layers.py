@@ -87,7 +87,7 @@ class Classifier(nn.Module):
         if self.bias_method == "learn":
             self.log_offset = nn.Parameter(-1*torch.ones(num_concepts, requires_grad=True)) #-10 -> -1
 
-        self.linear = nn.Linear(num_concepts, num_classes)
+        #self.linear = nn.Linear(num_concepts, num_classes)
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # input-dependent concept selection
@@ -118,8 +118,9 @@ class Classifier(nn.Module):
             x = x * mask
 
         # sparse linear layer
-        out = self.linear(gated)
-        return out, gated, x
+        #out = self.linear(gated)
+        #return out, gated, x
+        return gated, x
 
 
 class UCBM:
@@ -215,10 +216,6 @@ class UCBM:
             self._k,
         ).to(self._device)
 
-        # --- Loss, optimizer, and scheduler ---
-        loss_fn = nn.BCEWithLogitsLoss() if self._multilabel else nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self._classifier.parameters(), lr=self._lr)
-        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self._epochs)
 
         # --- DataLoader over (embeddings, targets) pairs ---
         dset = PDataset(embeddings, training_set.targets[:num_embeddings])
