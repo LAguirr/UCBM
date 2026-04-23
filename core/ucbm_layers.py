@@ -6,6 +6,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, Subset, TensorDataset, Dataset
 from tqdm import tqdm, trange
 import numpy as np
+import joblib
 from utils.concept_ops import raw_concept_sims
 from utils.concept_ops import TopK
 from utils.concept_ops import l0_loss
@@ -119,8 +120,9 @@ class Classifier(nn.Module):
             x = x * mask
 
         # sparse linear layer
-        out = self.linear(gated)
-        return out, gated, x
+        #out = self.linear(gated)
+        #return out, gated, x
+        return gated, x
 
 
 class UCBM:
@@ -217,11 +219,6 @@ class UCBM:
         ).to(self._device)
 
 
-
-
-       
-
-
         # --- Loss, optimizer, and scheduler ---
         loss_fn = nn.BCEWithLogitsLoss() if self._multilabel else nn.CrossEntropyLoss()
         optimizer = optim.Adam(self._classifier.parameters(), lr=self._lr)
@@ -231,89 +228,57 @@ class UCBM:
         dset = PDataset(embeddings, training_set.targets[:num_embeddings])
         data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
 
-         #////////////////////////////// Tree classifier //////////////////////////////////////
-        tree = DecisionTreeClassifier(
+        # --- Train DecisionTreeClassifier ---
+        # Accumulate all concept activations and targets for tree training
+        all_activations = []
+        all_targets = []
+        
+        self._classifier.eval()  # Use classifier in eval mode to get gated activations
+        with torch.no_grad():
+            for X_batch, y_batch in tqdm(data_loader, desc="Accumulating activations", leave=False):
+                X_batch = X_batch.to(self._device)
+                # Normalize activations
+                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
+                
+                # Get gated activations from classifier
+                after_gate, _ = self._classifier(X_batch)
+                all_activations.append(after_gate.cpu())
+                all_targets.append(y_batch.cpu())
+        
+        # Concatenate all batches
+        all_activations = torch.cat(all_activations, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        
+        # Train decision tree on all accumulated data
+        self._tree = DecisionTreeClassifier(
             max_depth=5,
             min_samples_leaf=10
         )
-
-        for X_batch, y_batch in tqdm(data_loader, leave=False):
-            X_batch = X_batch.to(self._device)
-            X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
-            y_batch = y_batch.to(self._device)
-            
-            after_gate, before_gate = self._classifier(X_batch)
-            
-            tree.fit(X_batch, y_batch)
-
+        self._tree.fit(all_activations.numpy(), all_targets.numpy())
         
-
-
-        # --- Pre-compute JumpReLU flag to avoid repeated string comparison in the hot loop ---
-        is_jump_relu = self._relu == "jumpReLU"
-
-        # --- Training loop ---
-        for epoch in trange(self._epochs, leave=False):
-            self._classifier.train()
-            corr, n_samples = 0, 0
-
-            for X_batch, y_batch in tqdm(data_loader, leave=False):
-                X_batch = X_batch.to(self._device)
-                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
-                y_batch = y_batch.to(self._device)
-
-                optimizer.zero_grad()
-                y_pred, after_gate, before_gate = self._classifier(X_batch)
-                loss = loss_fn(y_pred, y_batch)
-
-                # Gate sparsity penalty — L0 for JumpReLU, elastic otherwise
-                if self._lam_gate != 0:
-                    if is_jump_relu:
-                        loss += self._lam_gate * l0_loss(
-                            before_gate,
-                            self._classifier._jumpReLU.log_threshold.exp(),
-                            self._classifier._jumpReLU.bandwidth,
-                        )
-                    else:
-                        loss += self._lam_gate * elastic_loss_activations(after_gate)
-
-
-                # Weight sparsity penalty
-                if self._lam_w != 0:
-                    loss += self._lam_w * elastic_loss_weights(self._classifier.linear.weight)
-
-                loss.backward()
-                optimizer.step()
-
-                # Accumulate weighted accuracy to correctly handle uneven last batch
-                batch_size = y_pred.shape[0]
-                corr += batch_size * multiclass_accuracy(torch.argmax(y_pred, dim=1), y_batch)
-                n_samples += batch_size
-
-
-            self._final_train_acc = round((corr / n_samples).item(), 2)
-
-
-            lr_scheduler.step()
-
-            # --- Epoch logging ---
-            if test_set:
-                self._classifier.eval()
-                test_acc = self.get_evaluation_metric(
-                    test_set,
-                    saved_activation_path=saved_activation_path,
-                    data_label="test",
-                    metric=["acc"],
-                )["acc"]
-
+        tree_accuracy = self._tree.score(all_activations.numpy(), all_targets.numpy())
+        if verbose:
+            print(f"Decision Tree Accuracy on training set: {tree_accuracy:.3f}")
+        
+        self._final_train_acc = tree_accuracy
+        
+        # --- Epoch logging ---
+        if test_set:
+            test_acc = self.get_evaluation_metric(
+                test_set,
+                saved_activation_path=saved_activation_path,
+                data_label="test",
+                metric=["acc"],
+            )["acc"]
             if verbose:
-                log = f"Epoch {epoch + 1}/{self._epochs} — train acc: {100 * corr / n_samples:.2f}%"
-                if test_set:
-                    log += f", test acc: {100 * test_acc:.2f}%"
-                print(log)
+                print(f"Decision Tree Accuracy on test set: {test_acc:.3f}")
+            
+            
+            
+            
 
 
-    @torch.no_grad()
+    """@torch.no_grad()
     def predict(self,
                 imgs: torch.Tensor) \
                     -> tuple[torch.Tensor, torch.Tensor]:
@@ -343,7 +308,7 @@ class UCBM:
         out, gate = out.cpu(), gate.cpu()
 
         return out, gate
-
+    """
     @torch.no_grad()
     def get_evaluation_metric(self,
                               dataset: ImageFolder,
@@ -351,12 +316,26 @@ class UCBM:
                               saved_activation_path: Optional[str] = None,
                               data_label: Optional[str] = None) \
                                 -> dict[str, float]:
-
-
-
-        if next(self._classifier.parameters()).device != self._device:
-            self._classifier.to(self._device)
-        self._classifier.eval()
+        """
+        Evaluate model using the decision tree classifier on concept activations.
+        
+        Parameters
+        ----------
+        dataset: ImageFolder
+            The dataset to evaluate on
+        metric: list
+            List of metrics to compute (acc, auprc, auroc, auprc_pc)
+        saved_activation_path: str
+            Path to saved activations
+        data_label: str
+            Label for the data (train, test, etc.)
+            
+        Returns
+        -------
+        metrics: dict[str, float]
+            Dictionary of computed metrics
+        """
+        assert hasattr(self, "_tree"), "Model not yet fitted. Train the model first using fit()."
 
         if isinstance(dataset, Subset):
             parent = dataset.dataset
@@ -375,36 +354,47 @@ class UCBM:
         else:
             current_targets = all_targets
 
-        # Load the concept activations.
+        # Load the concept activations
         embeddings = self._get_concept_embeddings(
             dataset, saved_activation_path, data_label,
             self._normalize, self._mean, self._std)
 
-        #dset = PDataset(embeddings, dataset.targets)
-        #data_loader = DataLoader(dset, batch_size=self._batch_size,shuffle=False, num_workers=8)
         dset = TensorDataset(embeddings.cpu(), current_targets.cpu())
-
         data_loader = DataLoader(dset, batch_size=self._batch_size,
                                  shuffle=False, num_workers=4)
 
-        y_pred = []
+        # Accumulate predictions and targets from decision tree
+        y_pred = []  # Hard predictions for accuracy
+        y_proba = []  # Probabilities for AUROC
         y_true = []
-        for X_batch, y_batch in data_loader:
-            X_batch = X_batch.to(self._device)
-            X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
-            y_predb, _, _ = self._classifier(X_batch)
-            if self._multilabel:
-                y_predb = torch.sigmoid(y_predb)
-            y_predb = y_predb.cpu()
-            y_pred.append(y_predb)
-            y_true.append(y_batch)
+        
+        self._classifier.eval()
+        with torch.no_grad():
+            for X_batch, y_batch in data_loader:
+                X_batch = X_batch.to(self._device)
+                # Normalize activations
+                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
+                
+                # Get gated activations from classifier
+                after_gate, _ = self._classifier(X_batch)
+                after_gate_np = after_gate.cpu().numpy()
+                
+                # Get tree hard predictions for accuracy
+                tree_pred = self._tree.predict(after_gate_np)
+                y_pred.append(torch.tensor(tree_pred))
+                
+                # Get tree probability estimates for AUROC
+                tree_proba = self._tree.predict_proba(after_gate_np)
+                y_proba.append(torch.tensor(tree_proba, dtype=torch.float32))
+                
+                y_true.append(y_batch)
 
-        y_pred = torch.cat(y_pred)
-        y_true = torch.cat(y_true)
+        # Concatenate all predictions and probabilities
+        y_pred = torch.cat(y_pred, dim=0)
+        y_proba = torch.cat(y_proba, dim=0)
+        y_true = torch.cat(y_true, dim=0)
 
-        def indices_tensor(targets, class_id):
-            return (torch.Tensor(targets) == class_id).nonzero().reshape(-1)
-
+        # Compute metrics
         metrics = {}
         for me in metric:
             if me == "acc":
@@ -412,57 +402,26 @@ class UCBM:
                     metrics[me] = multilabel_accuracy(y_pred, y_true, criteria="hamming").item()
                 else:
                     metrics[me] = multiclass_accuracy(y_pred, y_true).item()
-            elif me == "auprc" and self._multilabel:
-                if self._multilabel:
-                    # metrics[me] = multilabel_auprc(y_pred, y_true).item()
-                    n = 500
-                    auprc_pc = 0
-                    for cls in dataset.class_to_idx.values():
-                        tar = torch.tensor(dataset.targets)[:,cls]
-                        pos_idcs = indices_tensor(tar, 1).detach().numpy()
-                        neg_idcs = indices_tensor(tar, 0).detach().numpy()
-                        pos_samples = np.random.choice(pos_idcs, n//2, len(pos_idcs) < n//2)
-                        neg_samples = np.random.choice(neg_idcs, n//2, len(neg_idcs) < n//2)
-
-                        samples = pos_samples.tolist() + neg_samples.tolist()
-
-                        auprc_pc += binary_auprc(y_pred[samples, cls], y_true[samples, cls]).item()
-                    auprc_pc /= len(dataset.class_to_idx)
-                    metrics[me] = auprc_pc
-
-                else:
-                    metrics[me] = multiclass_auprc(y_pred, y_true).item()
-
-            elif me == "auprc_pc" and self._multilabel:
-                n = 500
-                auprc_pc = []
-                for cls in dataset.class_to_idx.values():
-                    tar = torch.tensor(dataset.targets)[:,cls]
-                    pos_idcs = indices_tensor(tar, 1).detach().numpy()
-                    neg_idcs = indices_tensor(tar, 0).detach().numpy()
-                    pos_samples = np.random.choice(pos_idcs, n//2, len(pos_idcs) < n//2)
-                    neg_samples = np.random.choice(neg_idcs, n//2, len(neg_idcs) < n//2)
-
-                    samples = pos_samples.tolist() + neg_samples.tolist()
-
-                    auprc_pc.append(binary_auprc(y_pred[samples, cls], y_true[samples, cls]).item())
-
-                metrics[me] = auprc_pc
             elif me == "auroc":
                 if self._multilabel:
                     auroc = 0
-                    n = y_pred.shape[1]
+                    n = y_proba.shape[1]
                     for i in range(n):
-                        auroc += binary_auroc(y_pred[:,i], y_true[:,i]).item()
+                        auroc += binary_auroc(y_proba[:, i], y_true[:, i]).item()
                     metrics[me] = auroc / n
                 else:
                     if len(y_true.unique()) == 2:
-                        # metrics[me] = binary_auroc(torch.argmax(y_pred, dim=1), y_true).item()
-                        metrics[me] = roc_auc_score(y_true.numpy(), softmax(y_pred.numpy(), axis=1)[:, 1])
+                        # Binary classification: use probability of positive class
+                        metrics[me] = roc_auc_score(y_true.numpy(), y_proba.numpy()[:, 1])
                     else:
-                        metrics[me] = multiclass_auroc(y_pred, y_true, num_classes=len(dataset.classes)).item()
+                        # Multi-class: use probability matrix
+                        metrics[me] = multiclass_auroc(y_proba, y_true, num_classes=len(dataset.classes)).item()
+                        
+            # Note: auprc metrics are typically used for multi-label classification
+            # For this single-label case, acc and auroc are more appropriate
+        
         return metrics
-
+    
     @torch.no_grad()
     def compute_concept_similarities(self,
                                      dataset: Dataset,
@@ -539,14 +498,14 @@ class UCBM:
                                  shuffle=False, num_workers=8)
         sum = 0
         for con in data_loader:
-            _, sim, _ = self._classifier(con.to(self._device))
+            sim, _ = self._classifier(con.to(self._device))
             sum += float(torch.count_nonzero(sim).cpu() / sim.shape[1])
 
         return sum / len(embeddings)
 
     def save_to_file(self, filepath: str, filename: str):
         '''
-        Saves the classifier of the model into a file.
+        Saves the classifier and decision tree of the model into a file.
 
         Parameters
         ----------
@@ -555,7 +514,6 @@ class UCBM:
         filename: str
             Filename for the file.
         '''
-
         def get_backbone():
             try:
                 return self._backbone.cpu()
@@ -583,8 +541,14 @@ class UCBM:
                 "normalize": self._normalize,
                 "mean": self._mean,
                 "std": self._std,
-                "k": self._k
+                "k": self._k,
+                "final_train_acc": self._final_train_acc if hasattr(self, "_final_train_acc") else None,
             }, path)
+        
+        # Save decision tree separately using joblib
+        if hasattr(self, "_tree"):
+            tree_path = path.replace(".pt", "_tree.pkl")
+            joblib.dump(self._tree, tree_path)
 
     @classmethod
     def load_from_file(cls,
@@ -593,19 +557,19 @@ class UCBM:
                        device: Literal["cuda", "cpu"] = "cuda",
                        backbone_p = None):
         '''
-        Load the classifier of the model from a file.
+        Load the classifier and decision tree of the model from a file.
 
         Parameters
         ----------
         filepath: str
-            Filepath to save the model.
+            Filepath to load the model from.
         filename: str
             Filename for the file.
         device: Literal["cuda", "cpu"]
+            Device to load model to.
         backbone_p = None
             The backbone if backbone is function (can't be saved).
         '''
-
         path = os.path.join(filepath, filename)
         data: dict = torch.load(path)
         if data["backbone"] is not None:
@@ -647,6 +611,7 @@ class UCBM:
         mean = data.get("mean", None)
         std = data.get("std", None)
         k = data.get("k", -1)
+        final_train_acc = data.get("final_train_acc", None)
         if scale_mode == "no" and bias_mode == "no" and k == -1 and "relu" not in data:
             relu = "no"
 
@@ -685,6 +650,13 @@ class UCBM:
         ucbm._multilabel = multilabel
         ucbm._mean = mean
         ucbm._std = std
+        ucbm._final_train_acc = final_train_acc
+        
+        # Load decision tree if it exists
+        tree_path = path.replace(".pt", "_tree.pkl")
+        if os.path.exists(tree_path):
+            ucbm._tree = joblib.load(tree_path)
+        
         return ucbm
 
     @torch.no_grad()
@@ -699,10 +671,9 @@ class UCBM:
         Parameters
         ----------
         dataset: ImageFolder
-            The dataset for which the concept similarities should be
-            computed for.
+            The dataset for which the confusion matrix should be computed.
         saved_activation_path: str
-            Path where the concept similarities can be/are saved.
+            Path where the concept activations can be/are saved.
         data_label: str
             Label (train or test) from given dataset.
 
@@ -712,7 +683,7 @@ class UCBM:
             class_id: {other_class: percentage of class_id images
                                     mapped on other class}
         '''
-
+        assert hasattr(self, "_tree"), "Model not yet fitted. Train the model first using fit()."
         assert not self._multilabel
 
         self._classifier.eval()
@@ -729,12 +700,20 @@ class UCBM:
         data_loader = DataLoader(dset, batch_size=self._batch_size,
                                  shuffle=False, num_workers=8)
 
-        for X_batch, y_batch in data_loader:
-            y_pred, _, _ = self._classifier(X_batch.to(self._device))
-            y_pred = y_pred.cpu()
-            for i in range(y_pred.numel()):
-                confusion_matrix[y_batch[i]][y_pred[i]] += 1
+        with torch.no_grad():
+            for X_batch, y_batch in data_loader:
+                X_batch = X_batch.to(self._device)
+                # Normalize activations
+                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
+                
+                # Get gated activations and get tree predictions
+                after_gate, _ = self._classifier(X_batch)
+                y_pred = self._tree.predict(after_gate.cpu().numpy())
+                
+                for i in range(len(y_pred)):
+                    confusion_matrix[int(y_batch[i])][int(y_pred[i])] += 1
 
+        # Normalize to percentages
         all = len(embeddings)
         confusion_matrix = {c: {k: v / all for k, v in cv.items()}
                               for c, cv in confusion_matrix.items()}
@@ -791,12 +770,12 @@ class UCBM:
         data["samples per class"] = images_preprocessed//len(test_data.classes)
         data["total patches"] = total_patches
         data["patch_size"] = int(patch_size)
-        data["training acc"] = self._final_train_acc
+        data["training acc"] = self._final_train_acc if hasattr(self, "_final_train_acc") else None
 
         train_res = self.get_evaluation_metric(
-            training_data, metrics, act_bank_path, "train")
+            training_data, metric=metrics, saved_activation_path=act_bank_path, data_label="train")
         test_res = self.get_evaluation_metric(
-            test_data, metrics, act_bank_path, "test")
+            test_data, metric=metrics, saved_activation_path=act_bank_path, data_label="test")
         if "acc" in metrics and "acc" in train_res:
             data["train acc"] = train_res["acc"]
             data["test acc"] = test_res["acc"]
