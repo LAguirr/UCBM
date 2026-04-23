@@ -263,7 +263,7 @@ class Craft(BaseConceptExtractor):
             patch_intensities = patches.sum(dim=(1, 2, 3))
 
             # Define a threshold (0.0 for perfectly black, or slightly higher like 0.01 to remove noise)
-            threshold = 20
+            threshold = 0.1
             valid_mask = patch_intensities > threshold
 
             # Filter the patches

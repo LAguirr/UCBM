@@ -18,7 +18,7 @@ from sklearn.metrics import roc_auc_score
 from scipy.special import softmax
 from torch.utils.data import ConcatDataset
 from sklearn.tree import DecisionTreeClassifier
-
+from sklearn.ensemble import RandomForestClassifier
 
 
 
@@ -130,7 +130,6 @@ class UCBM:
                  backbone,
                  h: Union [torch.Tensor, np.ndarray],
                  batch_size: int,
-                 epochs: int,
                  lam_gate: float,
                  lam_w: float,
                  dropout_p: float,
@@ -151,7 +150,7 @@ class UCBM:
         self._batch_size = batch_size #we have it from the DataLoader = 64
         self._lr = learning_rate # we have it
         self._device = device #GPU. Thanks google
-        self._epochs = epochs # we can personalize it
+
         self._lam_gate = lam_gate # The autor says lam_gate =  0
         self._lam_w = lam_w #The author set lam_w = 8e-4
         self._dropout_p = dropout_p # The author fit dropout_p = 0.2
@@ -219,11 +218,6 @@ class UCBM:
         ).to(self._device)
 
 
-        # --- Loss, optimizer, and scheduler ---
-        loss_fn = nn.BCEWithLogitsLoss() if self._multilabel else nn.CrossEntropyLoss()
-        optimizer = optim.Adam(self._classifier.parameters(), lr=self._lr)
-        lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=self._epochs)
-
         # --- DataLoader over (embeddings, targets) pairs ---
         dset = PDataset(embeddings, training_set.targets[:num_embeddings])
         data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
@@ -251,9 +245,13 @@ class UCBM:
         
         # Train decision tree on all accumulated data
         self._tree = DecisionTreeClassifier(
-            max_depth=5,
-            min_samples_leaf=10
+            max_depth=12, 
+            min_samples_leaf=10,  
+            criterion='entropy',
         )
+
+       
+        
         self._tree.fit(all_activations.numpy(), all_targets.numpy())
         
         tree_accuracy = self._tree.score(all_activations.numpy(), all_targets.numpy())
@@ -262,7 +260,7 @@ class UCBM:
         
         self._final_train_acc = tree_accuracy
         
-        # --- Epoch logging ---
+        # ---   logging ---
         if test_set:
             test_acc = self.get_evaluation_metric(
                 test_set,
@@ -525,7 +523,7 @@ class UCBM:
             {
                 "model_state_dict": self._classifier.state_dict(),
                 "backbone": get_backbone(),
-                "epochs": self._epochs,
+
                 "batch_size": self._batch_size,
                 "lam_gate": self._lam_gate,
                 "lam_w": self._lam_w,
@@ -585,7 +583,7 @@ class UCBM:
         lam_w = data["lam_w"]
         batch_size = data["batch_size"]
         learning_rate = data["learning_rate"]
-        epochs = data["epochs"]
+
         relu = data.get("relu", "ReLU")
         scale_mode = data["scale_mode"]
         bias_mode = data["bias_mode"]
@@ -633,7 +631,7 @@ class UCBM:
             backbone,
             h,
             batch_size,
-            epochs,
+
             lam_gate,
             lam_w,
             dropout_p,
@@ -795,7 +793,7 @@ class UCBM:
         data["learning rate"] = self._lr
         data["lambda gate"] = self._lam_gate
         data["lambda w"] = self._lam_w
-        data["epochs"] = self._epochs
+
         data["dropout p"] = self._dropout_p
         data["scale mode"] = self._scale_mode
         data["bias mode"] = self._bias_mode

@@ -44,29 +44,30 @@ if __name__ == "__main__":
     else:
         #train the model
         print("Training the model....")
-        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device, epochs=10)
+        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device)
         print("Model trained!!")
     
+
     g = FeatureExtractorG(backbone).to(device)
     h = ClassifierH(g).to(device)
 
     # 3. Concept Discovery (CRAFT)
 
     patch_size = 7
-    n_concepts = 8
+    n_concepts = 9
 
     print(f"Discovering {n_concepts} concepts with CRAFT....")
 
     images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
 
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
-    crops, crops_u, w = craft.fit(images_batch)
+    crops, crops_u, w = craft.fit(images_batch, filter_patches=True)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
-    epochs = 5
+
     lam_gate =  0
     lam_w = 0
     dropout_p = 0.0 #0.2
@@ -87,7 +88,7 @@ if __name__ == "__main__":
     h = h_tensor.numpy()
 
     print("-----------------------------------------       Training UCBM....")
-    ph_cbm = UCBM(backbone=g, h=h, batch_size=64, epochs=epochs, lam_gate=lam_gate, lam_w=lam_w, dropout_p=dropout_p, learning_rate=lr, relu=relu, scale_mode=scale_choose, bias_mode=bias_choose, normalize=normalize_concepts, k=k, device=device)
+    ph_cbm = UCBM(backbone=g, h=h, batch_size=64, lam_gate=lam_gate, lam_w=lam_w, dropout_p=dropout_p, learning_rate=lr, relu=relu, scale_mode=scale_choose, bias_mode=bias_choose, normalize=normalize_concepts, k=k, device=device)
     ph_cbm.fit(train_ds, BASE_DIR / "mnist_activations")
 
     save_name = cls_save_name # author says is "topk_seed_0"
