@@ -16,6 +16,12 @@ from os import path, makedirs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
+"""
+
+this comment is made in the main branch
+
+"""
+
 
 BASE_DIR = Path(__file__).resolve().parent
 models_dir = BASE_DIR / 'models'

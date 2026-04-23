@@ -199,7 +199,6 @@ class Craft(BaseConceptExtractor):
               x_min, x_max = np.where(cols)[0][[0, -1]]
 
               _, H, W = img_tensor.shape
-              
               y_min = max(0, y_min - pad)
               y_max = min(H - 1, y_max + pad)
               x_min = max(0, x_min - pad)
