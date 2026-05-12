@@ -68,11 +68,12 @@ if __name__ == "__main__":
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
     crops, crops_u, w = craft.fit(images_batch)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
+    print("Concept bank saved to craft_concept_bank.npy")
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train UCBM
-    epochs = 5
+    epochs = 1
     lam_gate =  0
     lam_w = 0
     dropout_p = 0.0 #0.2
