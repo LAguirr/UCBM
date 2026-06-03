@@ -1,115 +1,149 @@
-import torch
-import numpy as np
-from torchvision import datasets, transforms
-from torch.utils.data import Subset, DataLoader
-from core.backbone import Net,ClassifierH, FeatureExtractorG, train_backbone
-from core.ucbm_layers import UCBM
-from core.dataset_utils import load_data, get_mnist_loaders
-from utils.visualization import visualize_image_concepts
-from mycraft.craft_torch import Craft
-import os
-from pathlib import Path
-import torch.nn.functional as F
-from datetime import datetime
 import json
-from os import path, makedirs
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
+import os
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import torch
+
+from core.dataset_utils import get_mnist_loaders
+from core.mnist_tree_backbone import build_backbone, train_notebook_backbone
+from core.mnist_tree_concepts import discover_concepts
+from core.mnist_tree_ucbm import train_three_phase_ucbm
+from utils.visualization import plot_concept_exemplars, plot_ucbm_decisions
+
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 
 
 BASE_DIR = Path(__file__).resolve().parent
-models_dir = BASE_DIR / 'models'
-models_dir.mkdir(parents=True, exist_ok=True)
+MODELS_DIR = BASE_DIR / "models"
+OUTPUTS_DIR = BASE_DIR / "outputs"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-if __name__ == "__main__":
-    # 1. Config & Data
+
+def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-
-    print("Charging data... ")
-
+    print("Charging data...")
     train_loader, val_loader, test_loader, train_ds, val_ds, test_ds = get_mnist_loaders(batch_size=64)
+    print("Datasets charged!.")
 
-    print("Datasets charged!. ")
-
-    # 2. Backbone
-    print("Charging model....")
-    backbone = Net()
-    models_dir = BASE_DIR / 'models'
-
-    model_path = models_dir /'mnist_cnnPytorch.pt'
-    if os.path.exists(model_path):
-        backbone.load_state_dict(torch.load(model_path, map_location=device))
-        print("Model charged!. ")
+    # Notebook-style backbone: 3 conv layers + GAP linear head
+    print("Charging notebook-style backbone....")
+    g, h, full_model = build_backbone(num_classes=10)
+    backbone_path = MODELS_DIR / "mnist_tree_backbone.pt"
+    if backbone_path.exists():
+        payload = torch.load(backbone_path, map_location=device)
+        g.load_state_dict(payload["g_state_dict"])
+        h.load_state_dict(payload["h_state_dict"])
+        print("Backbone charged!.")
     else:
-        #train the model
-        print("Training the model....")
-        backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device)
-        print("Model trained!!")
-    
+        print("Training notebook-style backbone....")
+        full_model = train_notebook_backbone(
+            g=g,
+            h=h,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            test_loader=test_loader,
+            device=device,
+            epochs=8,
+            lr=1e-3,
+        )
+        torch.save(
+            {"g_state_dict": full_model.g.state_dict(), "h_state_dict": full_model.h.state_dict()},
+            backbone_path,
+        )
+        print(f"Saved backbone to {backbone_path}")
 
-    g = FeatureExtractorG(backbone).to(device)
-    h = ClassifierH(g).to(device)
+    g = g.to(device)
 
-    # 3. Concept Discovery (CRAFT)
-
+    # Concept discovery mirrors the notebook: sample spatial maps, fit NMF, build exemplars
     patch_size = 7
     n_concepts = 9
+    sample_size = 500
 
-    print(f"Discovering {n_concepts} concepts with CRAFT....")
+    print(f"Discovering {n_concepts} concepts with notebook-style NMF....")
+    concept_result = discover_concepts(
+        dataset=train_ds,
+        backbone=g,
+        n_concepts=n_concepts,
+        sample_size=sample_size,
+        device=device,
+        top_k_patches=6,
+        seed=0,
+    )
 
-    images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
+    concept_bank_path = BASE_DIR / "craft_concept_bank.npy"
+    np.save(concept_bank_path, concept_result.concept_bank.numpy())
+    print(f"Concept bank saved to {concept_bank_path}")
 
-    craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
-    crops, crops_u, w = craft.fit(images_batch, filter_patches=True)
-    np.save(BASE_DIR /"craft_concept_bank.npy", w)
-
-    print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
-
-    # 4. Train UCBM
-
-    lam_gate =  0
-    lam_w = 0
-    dropout_p = 0.0 #0.2
-    lr = 0.01
-    cls_save_name= "topk_seed_0"
-    scale_choose= 'learn' #'no'
-    bias_choose='learn' #-- normalize_concepts
-    normalize_concepts = True # Boolean
-    relu='ReLU'
-    k = -1
-    seed = 0
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    dataset = "MNIST"
-    cls_save_name = "topk_seed_0"
-    h = np.load(BASE_DIR / "craft_concept_bank.npy")
-    h_tensor = torch.tensor(h, dtype=torch.float32)
-    h_tensor = F.normalize(h_tensor, p=2, dim=1) # Normalización L2 estricta
-    h = h_tensor.numpy()
-
+    # Train the notebook-style UCBM with the three phases
     print("-----------------------------------------       Training UCBM....")
-    ph_cbm = UCBM(backbone=g, h=h, batch_size=64, lam_gate=lam_gate, lam_w=lam_w, dropout_p=dropout_p, learning_rate=lr, relu=relu, scale_mode=scale_choose, bias_mode=bias_choose, normalize=normalize_concepts, k=k, device=device)
-    ph_cbm.fit(train_ds, BASE_DIR / "mnist_activations")
+    ucbm, metrics = train_three_phase_ucbm(
+        backbone_g=g,
+        train_loader=train_loader,
+        test_loader=test_loader,
+        concept_bank=concept_result.concept_bank,
+        device=device,
+        NUM_CONCEPTS=n_concepts,
+        NUM_CLASSES=10,
+        PHASE1_EPOCHS=20,
+        PHASE2_EPOCHS=10,
+        PHASE3_EPOCHS=30,
+        LR_PHASE1=1e-3,
+        LR_PHASE2=5e-4,
+        LR_PHASE3=1e-4,
+        LAM_GATE=5e-5,
+        LAM_W=5e-6,
+        DROPOUT_P=0.1,
+    )
+    print(json.dumps(metrics, indent=2))
 
-    save_name = cls_save_name # author says is "topk_seed_0"
-    if save_name == "":
-        save_name = f"class_{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
-    else:
-        save_name += f"-{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
-    class_path = BASE_DIR / "Model" #class_path = path.join(plotter.get_classifier_path(), args.concept_data, save_name)
-    makedirs(class_path, exist_ok=True)
-    ph_cbm.save_to_file(class_path, "classifier.pth")
+    save_name = f"mnist_tree_{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
+    model_dir = BASE_DIR / "Model"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "backbone_g": g.state_dict(),
+            "ucbm_state_dict": ucbm.state_dict(),
+            "concept_bank": concept_result.concept_bank.cpu(),
+            "metrics": metrics,
+        },
+        model_dir / "classifier.pth",
+    )
 
-    metrics = ["acc", "auprc", "auprc_pc", "auroc"]
-    act_path = BASE_DIR / "mnist_activations"
-    os.makedirs(act_path, exist_ok=True)
+    info_dict = {
+        "save_name": save_name,
+        "amount of concepts": n_concepts,
+        "amount of classes": 10,
+        "amount of samples": sample_size,
+        "patch_size": patch_size,
+        "train acc": metrics["final_acc"],
+        "probe acc": metrics["probe_acc"],
+        "phase 1 acc": metrics["acc_p1"],
+        "phase 2 acc": metrics["acc_p2"],
+        "avg active concepts": metrics["avg_active"],
+        "learning rate": 1e-4,
+        "lambda gate": 5e-5,
+        "lambda w": 5e-6,
+        "dropout p": 0.1,
+        "normalize": True,
+        "k": -1,
+    }
 
-    info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
-    print(json.dumps(info_dict, indent=2))
-    with open(path.join(class_path, "info.json"), "w") as f:
+    with open(model_dir / "info.json", "w", encoding="utf-8") as f:
         json.dump(info_dict, f, indent=2)
-    print(f"Saved information to {class_path}")
+    print(f"Saved information to {model_dir}")
     print("-----------------------------------------        UCBM Trained!!")
-    
-    # 5. Visualize
-    visualize_image_concepts(ph_cbm, test_ds)   
+
+    # Notebook-style visualizations
+    plot_concept_exemplars(concept_result.exemplars, OUTPUTS_DIR / "ucbm_craft_concepts.png", show_c=12, top_k=6)
+    plot_ucbm_decisions(ucbm, g, concept_result.concept_bank, concept_result.exemplars, OUTPUTS_DIR / "ucbm_craft_decisions.png", device=device)
+    print(f"Saved visualizations to {OUTPUTS_DIR}")
+
+
+if __name__ == "__main__":
+    main()
