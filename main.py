@@ -109,6 +109,7 @@ if __name__ == "__main__":
             batch_size=64
         )
     
+    
     print(f"✓ Tree created")
     print(f"✓ Number of concepts: {tree.n_concepts}")
     print(f"✓ Patch dimensions: {tree.patch_h}x{tree.patch_w}")
