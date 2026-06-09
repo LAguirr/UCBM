@@ -40,10 +40,10 @@ if __name__ == "__main__":
     model_path = models_dir /'mnist_cnnPytorch.pt'
     if os.path.exists(model_path):
         backbone.load_state_dict(torch.load(model_path, map_location=device))
-        print("Model charged!. ")
+        print("BACKBONE CNN Model charged!. ")
     else:
         #train the model
-        print("Training the model....")
+        print("Training backbone CNN the model....")
         backbone = train_backbone(backbone, train_loader, val_loader,test_loader, device)
         print("Model trained!!")
     
@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
 
-    # 4. Train UCBM
+    # 4. Train Tree-based Classifier (UCBM)
 
     lam_gate =  0
     lam_w = 0
