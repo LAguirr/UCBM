@@ -13,6 +13,7 @@ import torch.nn.functional as F
 from datetime import datetime
 import json
 from os import path, makedirs
+from core.cbdt_layers import ConceptBasedDecisionTree
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
@@ -68,28 +69,52 @@ if __name__ == "__main__":
 
     # 4. Train Tree-based Classifier (UCBM)
 
-    lam_gate =  0
-    lam_w = 0
-    dropout_p = 0.0 #0.2
-    lr = 0.01
-    cls_save_name= "topk_seed_0"
-    scale_choose= 'learn' #'no'
-    bias_choose='learn' #-- normalize_concepts
-    normalize_concepts = True # Boolean
-    relu='ReLU'
-    k = -1
     seed = 0
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dataset = "MNIST"
     cls_save_name = "topk_seed_0"
-    h = np.load(BASE_DIR / "craft_concept_bank.npy")
+
+    try:
+        h = np.load(BASE_DIR / "craft_concept_bank.npy") #this is the h.py <----------------    10 CONCEPT BANK
+        print("Concepts loaded")
+    except NameError:
+        print("No Concepts file found", NameError)
+
+
     h_tensor = torch.tensor(h, dtype=torch.float32)
     h_tensor = F.normalize(h_tensor, p=2, dim=1) # Normalización L2 estricta
     h = h_tensor.numpy()
+    act_path = BASE_DIR / "mnist_activations"
 
-    print("-----------------------------------------       Training UCBM....")
-    ph_cbm = UCBM(backbone=g, h=h, batch_size=64, lam_gate=lam_gate, lam_w=lam_w, dropout_p=dropout_p, learning_rate=lr, relu=relu, scale_mode=scale_choose, bias_mode=bias_choose, normalize=normalize_concepts, k=k, device=device)
-    ph_cbm.fit(train_ds, BASE_DIR / "mnist_activations")
+
+    print("="*70)
+    print("Computing Concept Activations")
+    print("="*70)
+    concept_activations = crops_u @ w  # [n_patches, n_concepts]
+
+    print(f"✓ Crops shape: {crops_u.shape}")
+    print(f"✓ Concept activations shape: {concept_activations.shape}")
+    print(f"✓ Number of concepts: {concept_activations.shape[1]}")
+
+
+    print(f"✓ Training set size: {train_data}")
+    tree = ConceptBasedDecisionTree(
+            backbone=g,
+            h=h,
+            crops=crops,  # Use training crops
+            concept_activations=concept_activations,  # For extracting top patches
+            max_depth=4,
+            min_samples_split=2,
+            device=device,
+            batch_size=64
+        )
+    
+    print(f"✓ Tree created")
+    print(f"✓ Number of concepts: {tree.n_concepts}")
+    print(f"✓ Patch dimensions: {tree.patch_h}x{tree.patch_w}")
+
+    train_metrics = tree.train(train_data)
+    print(f"✓ Training complete!")
 
     save_name = cls_save_name # author says is "topk_seed_0"
     if save_name == "":
@@ -98,18 +123,18 @@ if __name__ == "__main__":
         save_name += f"-{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
     class_path = BASE_DIR / "Model" #class_path = path.join(plotter.get_classifier_path(), args.concept_data, save_name)
     makedirs(class_path, exist_ok=True)
-    ph_cbm.save_to_file(class_path, "classifier.pth")
+    #tree.save_to_file(class_path, "classifier.pth")
 
-    metrics = ["acc", "auprc", "auprc_pc", "auroc"]
-    act_path = BASE_DIR / "mnist_activations"
-    os.makedirs(act_path, exist_ok=True)
+    #metrics = ["acc", "auprc", "auprc_pc", "auroc"]
+    #act_path = BASE_DIR / "mnist_activations"
+    #os.makedirs(act_path, exist_ok=True)
 
-    info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
-    print(json.dumps(info_dict, indent=2))
-    with open(path.join(class_path, "info.json"), "w") as f:
-        json.dump(info_dict, f, indent=2)
-    print(f"Saved information to {class_path}")
-    print("-----------------------------------------        UCBM Trained!!")
+    #info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
+    #print(json.dumps(info_dict, indent=2))
+    #with open(path.join(class_path, "info.json"), "w") as f:
+    #    json.dump(info_dict, f, indent=2)
+    #print(f"Saved information to {class_path}")
+    print("----------------------------------------- Tree Trained!")
     
     # 5. Visualize
     visualize_image_concepts(ph_cbm, test_ds)   
