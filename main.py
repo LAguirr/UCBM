@@ -22,6 +22,9 @@ BASE_DIR = Path(__file__).resolve().parent
 models_dir = BASE_DIR / 'models'
 models_dir.mkdir(parents=True, exist_ok=True)
 
+act_path = BASE_DIR / "mnist_activations"
+os.makedirs(act_path, exist_ok=True)
+
 if __name__ == "__main__":
     # 1. Config & Data
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -29,7 +32,7 @@ if __name__ == "__main__":
 
     print("Charging data... ")
 
-    train_loader, val_loader, test_loader, train_ds, val_ds, test_ds = get_mnist_loaders(batch_size=64)
+    train_loader, val_loader, test_loader, train_data, val_data, test_data = get_mnist_loaders(batch_size=64)
 
     print("Datasets charged!. ")
 
@@ -59,7 +62,7 @@ if __name__ == "__main__":
 
     print(f"Discovering {n_concepts} concepts with CRAFT....")
 
-    images_batch = torch.stack([train_ds[i][0] for i in range(500)]).to(device)
+    images_batch = torch.stack([train_data[i][0] for i in range(500)]).to(device)
 
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
     crops, crops_u, w = craft.fit(images_batch, filter_patches=True)
@@ -103,6 +106,7 @@ if __name__ == "__main__":
             h=h,
             crops=crops,  # Use training crops
             concept_activations=concept_activations,  # For extracting top patches
+            act_path=act_path,
             max_depth=4,
             min_samples_split=2,
             device=device,
@@ -127,7 +131,7 @@ if __name__ == "__main__":
     #tree.save_to_file(class_path, "classifier.pth")
 
     #metrics = ["acc", "auprc", "auprc_pc", "auroc"]
-    #act_path = BASE_DIR / "mnist_activations"
+    act_path = BASE_DIR / "mnist_activations"
     #os.makedirs(act_path, exist_ok=True)
 
     #info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
@@ -138,4 +142,4 @@ if __name__ == "__main__":
     print("----------------------------------------- Tree Trained!")
     
     # 5. Visualize
-    visualize_image_concepts(ph_cbm, test_ds)   
+    #visualize_image_concepts(ph_cbm, test_ds)   

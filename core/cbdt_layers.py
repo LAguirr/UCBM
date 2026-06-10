@@ -14,6 +14,9 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from torch.utils.data import Dataset, DataLoader, TensorDataset, Subset, ConcatDataset
 from torchvision.datasets import ImageFolder
 
+from .dataset_utils import PDataset
+from utils.concept_ops import raw_concept_sims
+
 
 class ConceptBasedDecisionTree:
   def __init__(self,
@@ -21,6 +24,7 @@ class ConceptBasedDecisionTree:
                h: Union [torch.Tensor, np.ndarray],
                crops: np.ndarray,
                concept_activations: np.ndarray | torch.Tensor,
+               act_path: str,
                max_depth: int,
                min_samples_split: int,
                batch_size: int,
@@ -37,6 +41,7 @@ class ConceptBasedDecisionTree:
 
         self.crops = crops
         self.concept_activations = concept_activations
+        self.act_path = act_path
         self._batch_size = batch_size #we have it from the DataLoader = 64
         self._device = device #GPU. Thanks google
 
@@ -106,7 +111,8 @@ class ConceptBasedDecisionTree:
             data_ds: Array of shape [n_samples, n_concepts]
 
         """
-        embeddings = self._get_concept_embeddings(data_ds, act_path, "train")
+        num_workers = 0
+        embeddings = self._get_concept_embeddings(data_ds, self.act_path, "train")
 
         num_embeddings = len(embeddings)
 
@@ -135,7 +141,7 @@ class ConceptBasedDecisionTree:
 
         print("Training Decision Tree on Concept Activations...")
         print(f"Embeddings Shape: {embeddings.shape}")
-        print(f"  Classes: {np.unique(labels)}")
+        print(f"Classes: {np.unique(all_labels)}")
         self.tree.fit(all_gated, all_labels)
         self.is_fitted = True
         train_acc = self.tree.score(all_gated, all_labels)
