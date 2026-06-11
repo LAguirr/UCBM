@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     print("Charging data... ")
 
-    full_dataset, train_loader, val_loader, test_loader, train_data, val_data, test_data = get_mnist_loaders(batch_size=64)
+    full_dataset, train_loader, val_loader, test_loader, train_ds, val_ds, test_ds = get_mnist_loaders(batch_size=64)
 
     print("Datasets charged!. ")
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     print(f"✓ Number of concepts: {concept_activations.shape[1]}")
 
 
-    print(f"✓ Training set size: {train_data}")
+    print(f"✓ Training set size: {train_ds}")
     tree = ConceptBasedDecisionTree(
             backbone=g,
             h=h,
@@ -122,8 +122,18 @@ if __name__ == "__main__":
     print(f"✓ Number of concepts: {tree.n_concepts}")
     print(f"✓ Patch dimensions: {tree.patch_h}x{tree.patch_w}")
 
-    train_metrics = tree.train(train_data)
+    train_metrics = tree.train(train_ds)
     print(f"✓ Training complete!")
+    print("\n" + "-"*70)
+    print("Evaluating Tree")
+
+    # Validation
+    val_metrics = tree.evaluate(val_ds)
+    print(f"✓ Val Accuracy: {val_metrics['accuracy']*100:.2f}%")
+
+    # Test
+    test_metrics = tree.evaluate(test_ds)
+    print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
 
     save_name = cls_save_name # author says is "topk_seed_0"
     if save_name == "":
@@ -132,17 +142,13 @@ if __name__ == "__main__":
         save_name += f"-{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
     class_path = BASE_DIR / "Model" #class_path = path.join(plotter.get_classifier_path(), args.concept_data, save_name)
     makedirs(class_path, exist_ok=True)
-    #tree.save_to_file(class_path, "classifier.pth")
+    tree.save_to_file(class_path, "classifier.pth")
 
-    #metrics = ["acc", "auprc", "auprc_pc", "auroc"]
-    act_path = BASE_DIR / "mnist_activations"
-    #os.makedirs(act_path, exist_ok=True)
-
-    #info_dict = ph_cbm.get_info_dict(training_data=train_ds, test_data=test_ds, act_bank_path=act_path, images_preprocessed=images_batch.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
-    #print(json.dumps(info_dict, indent=2))
-    #with open(path.join(class_path, "info.json"), "w") as f:
-    #    json.dump(info_dict, f, indent=2)
-    #print(f"Saved information to {class_path}")
+    info_dict = ''
+    print(json.dumps(info_dict, indent=2))
+    with open(path.join(class_path, "info.json"), "w") as f:
+        json.dump(info_dict, f, indent=2)
+    print(f"Saved information to {class_path}")
     print("----------------------------------------- Tree Trained!")
     
     # 5. Visualize

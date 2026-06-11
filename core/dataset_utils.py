@@ -43,16 +43,16 @@ def get_mnist_loaders(batch_size=64, root='./data'):
     val_ds   = Subset(full_dataset, val_idx)
     test_ds  = Subset(full_dataset, test_idx)
 
-    train_data = load_data(train_ds, full_dataset)
-    val_data   = load_data(val_ds, full_dataset)
-    test_data  = load_data(test_ds, full_dataset)
+    load_data(train_ds, full_dataset)
+    load_data(val_ds, full_dataset)
+    load_data(test_ds, full_dataset)
 
     # Create Loaders
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
-    return full_dataset, train_loader, val_loader, test_loader, train_data, val_data, test_data
+    return full_dataset, train_loader, val_loader, test_loader, train_ds, val_ds, test_ds
 
 def load_data(subset, parent_dataset):
     if isinstance(parent_dataset, torch.utils.data.ConcatDataset):
