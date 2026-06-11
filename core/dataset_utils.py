@@ -42,6 +42,7 @@ def get_mnist_loaders(batch_size=64, root='./data'):
     train_ds = Subset(full_dataset, train_idx)
     val_ds   = Subset(full_dataset, val_idx)
     test_ds  = Subset(full_dataset, test_idx)
+
     train_data = load_data(train_ds, full_dataset)
     val_data   = load_data(val_ds, full_dataset)
     test_data  = load_data(test_ds, full_dataset)
@@ -51,7 +52,7 @@ def get_mnist_loaders(batch_size=64, root='./data'):
     val_loader   = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
     test_loader  = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader, test_loader, train_data, val_data, test_data
+    return full_dataset, train_loader, val_loader, test_loader, train_data, val_data, test_data
 
 def load_data(subset, parent_dataset):
     if isinstance(parent_dataset, torch.utils.data.ConcatDataset):
@@ -62,6 +63,33 @@ def load_data(subset, parent_dataset):
         all_targets = parent_dataset.targets
     subset.targets = all_targets[subset.indices]
     return subset
+
+def images_preprocessing(train_ds, device): 
+    print("Procesing images...")
+    
+    # Stratified sampling: 50 images per class
+    class_indices = [[] for _ in range(10)]
+    for idx in range(len(train_ds)):
+        _, label = train_ds[idx]
+        class_indices[label].append(idx)
+
+    samples_per_class = 100
+    stratified_indices = []
+    for class_label in range(10):
+        stratified_indices.extend(class_indices[class_label][:samples_per_class])
+
+    train_subset = torch.utils.data.Subset(train_ds, stratified_indices)
+
+
+    images_list = []
+    for idx in range(len(train_subset)):
+        img, _ = train_subset[idx]  # img is already a tensor from transforms.ToTensor()
+        images_list.append(img)
+
+    # Stack all images into a single tensor
+    images_preprocessed = torch.stack(images_list).to(device)
+    print(f"✓ Images batch shape: {images_preprocessed.shape}")
+    return images_preprocessed
 
 class PDataset(Dataset):
     def __init__(self, *its, list_to_tensor: bool = True):

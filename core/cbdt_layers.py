@@ -45,7 +45,7 @@ class ConceptBasedDecisionTree:
         self._batch_size = batch_size #we have it from the DataLoader = 64
         self._device = device #GPU. Thanks google
 
-        print("Crops shape", crops.shape)
+        print("Crops shape: ", crops.shape)
         self.patch_h, self.patch_w = crops.shape[0], crops.shape[1]
         self.channels = crops.shape[3] if crops.ndim == 4 else 1
 

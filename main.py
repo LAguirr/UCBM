@@ -6,7 +6,7 @@ from core.backbone import Net,ClassifierH, FeatureExtractorG, train_backbone
 from core.ucbm_layers import UCBM
 from core.dataset_utils import load_data, get_mnist_loaders
 from utils.visualization import visualize_image_concepts
-from mycraft.craft_torch import Craft
+from mycraft.craft_torch import Craft, torch_to_numpy
 import os
 from pathlib import Path
 import torch.nn.functional as F
@@ -14,6 +14,7 @@ from datetime import datetime
 import json
 from os import path, makedirs
 from core.cbdt_layers import ConceptBasedDecisionTree
+from core.dataset_utils import images_preprocessing
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
@@ -32,7 +33,7 @@ if __name__ == "__main__":
 
     print("Charging data... ")
 
-    train_loader, val_loader, test_loader, train_data, val_data, test_data = get_mnist_loaders(batch_size=64)
+    full_dataset, train_loader, val_loader, test_loader, train_data, val_data, test_data = get_mnist_loaders(batch_size=64)
 
     print("Datasets charged!. ")
 
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     models_dir = BASE_DIR / 'models'
 
     model_path = models_dir /'mnist_cnnPytorch.pt'
+
     if os.path.exists(model_path):
         backbone.load_state_dict(torch.load(model_path, map_location=device))
         print("BACKBONE CNN Model charged!. ")
@@ -57,18 +59,19 @@ if __name__ == "__main__":
 
     # 3. Concept Discovery (CRAFT)
 
-    patch_size = 7
-    n_concepts = 9
+    patch_size = 9
+    n_concepts = 30
 
     print(f"Discovering {n_concepts} concepts with CRAFT....")
 
-    images_batch = torch.stack([train_data[i][0] for i in range(500)]).to(device)
+    images_preprocessed = images_preprocessing(full_dataset, device)
 
     craft = Craft(input_to_latent=g, latent_to_logit=h, number_of_concepts=n_concepts, patch_size=patch_size, device=device)
-    crops, crops_u, w = craft.fit(images_batch, filter_patches=True)
+    crops, crops_u, w = craft.fit(images_preprocessed)
+    crops = np.moveaxis(torch_to_numpy(crops), 1, -1)
     np.save(BASE_DIR /"craft_concept_bank.npy", w)
 
-    print("Concepts discovered!", crops.shape, crops_u.shape, w.shape)
+    print("Concepts discovered! ", crops.shape, crops_u.shape, w.shape)
 
     # 4. Train Tree-based Classifier (UCBM)
 
@@ -95,7 +98,8 @@ if __name__ == "__main__":
     print("="*70)
     concept_activations = crops_u @ w  # [n_patches, n_concepts]
 
-    print(f"✓ Crops shape: {crops_u.shape}")
+    print(f"✓ Crops shape: {crops.shape}")
+    print(f"✓ Crops_u shape: {crops_u.shape}")
     print(f"✓ Concept activations shape: {concept_activations.shape}")
     print(f"✓ Number of concepts: {concept_activations.shape[1]}")
 

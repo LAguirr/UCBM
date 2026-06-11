@@ -229,10 +229,7 @@ class Craft(BaseConceptExtractor):
             Preprocessed Iinput data of shape (n_samples, channels, height, width).
             (x1, x2, ..., xn) in the paper.
 
-
         filter_patches : bool, optional
-
-        
 
         Returns
         -------
@@ -306,6 +303,10 @@ class Craft(BaseConceptExtractor):
         # store the factorizer and W as attributes of the Craft instance
         self.reducer = reducer
         self.W = np.array(W, dtype=np.float32)
+        print(f"✓From CRAFT Patches shape: {patches.shape}")
+        print(f"✓From CRAFT U shape: {U.shape}")
+        print(f"✓From CRAFT W shape: {W.shape}")
+
 
         return patches, U, W
     
