@@ -3,9 +3,8 @@ import numpy as np
 from torchvision import datasets, transforms
 from torch.utils.data import Subset, DataLoader
 from core.backbone import Net,ClassifierH, FeatureExtractorG, train_backbone
-from core.ucbm_layers import UCBM
 from core.dataset_utils import load_data, get_mnist_loaders
-from utils.visualization import visualize_image_concepts
+from utils.visualization import visualize_top_patches
 from mycraft.craft_torch import Craft, torch_to_numpy
 import os
 from pathlib import Path
@@ -13,7 +12,7 @@ import torch.nn.functional as F
 from datetime import datetime
 import json
 from os import path, makedirs
-from core.cbdt_layers import ConceptBasedDecisionTree
+from core.cbdt_layers import ConceptBasedDecisionTree, create_confusion_matrix_visualization, visualize_decision_journey
 from core.dataset_utils import images_preprocessing
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
@@ -97,6 +96,7 @@ if __name__ == "__main__":
     print("Computing Concept Activations")
     print("="*70)
     concept_activations = crops_u @ w  # [n_patches, n_concepts]
+    #visualize_top_patches(n_concepts, concept_activations, crops)
 
     print(f"✓ Crops shape: {crops.shape}")
     print(f"✓ Crops_u shape: {crops_u.shape}")
@@ -135,6 +135,26 @@ if __name__ == "__main__":
     test_metrics = tree.evaluate(test_ds)
     print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
 
+    print("-"*70)
+    print("Preparing Visualization of Tree Structure")
+    #tree.visualize_tree_structure(crops.shape[1:3])
+
+    
+    
+    # Visualize
+    labels_test = torch.cat([labels for _, labels in test_loader]).tolist()
+
+    #create_confusion_matrix_visualization(test_metrics['predictions'], labels_test)
+
+    #tree.tree.score(test_ds,labels_test),
+    data_dict =  {
+            'train_accuracy': train_metrics['accuracy'],
+            'val_accuracy': val_metrics['accuracy'],
+            'test_accuracy': test_metrics['accuracy'],
+    }
+      
+    visualize_decision_journey(test_ds, act_path, tree, image_index=0)
+
     save_name = cls_save_name # author says is "topk_seed_0"
     if save_name == "":
         save_name = f"class_{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
@@ -150,6 +170,3 @@ if __name__ == "__main__":
         json.dump(info_dict, f, indent=2)
     print(f"Saved information to {class_path}")
     print("----------------------------------------- Tree Trained!")
-    
-    # 5. Visualize
-    #visualize_image_concepts(ph_cbm, test_ds)   

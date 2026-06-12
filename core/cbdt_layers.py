@@ -40,6 +40,8 @@ class ConceptBasedDecisionTree:
 
 
         self.crops = crops
+
+        concept_activations = (concept_activations - concept_activations.min(axis=0)) / (concept_activations.max(axis=0) - concept_activations.min(axis=0) + 1e-8)
         self.concept_activations = concept_activations
         self.act_path = act_path
         self._batch_size = batch_size #we have it from the DataLoader = 64
@@ -118,7 +120,7 @@ class ConceptBasedDecisionTree:
 
         # --- DataLoader over (embeddings, targets) pairs ---
         dset = PDataset(embeddings, data_ds.targets[:num_embeddings])
-        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=num_workers)
+        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
 
         all_gated = []
         all_labels = []
@@ -165,13 +167,13 @@ class ConceptBasedDecisionTree:
 
         embeddings = self._get_concept_embeddings(
             data_ds,
-            act_path,
+            self.act_path,
             "test"
         )
 
         num_embeddings = len(embeddings)
         dset = PDataset(embeddings, data_ds.targets[:num_embeddings])
-        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=num_workers)
+        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
 
         all_gated = []
         all_labels = []
@@ -515,26 +517,26 @@ def create_confusion_matrix_visualization(predictions: np.ndarray, labels: np.nd
 
 
 def visualize_decision_journey(
-    image: torch.Tensor,
-    concept_activation: np.ndarray,
-    concept_patches: np.ndarray,
+    test_ds: ImageFolder,
+    act_path: str,
     tree: ConceptBasedDecisionTree,
-    true_label: int,
-    predicted_label: int,
     image_index: int = None
 ):
     """
     Visualize the decision journey for a single image through the tree.
 
-    Args:
-        image: Input image tensor [1, H, W] or [3, H, W]
-        concept_activation: Concept activation vector [n_concepts,]
-        concept_patches: Array of concept patches
-        tree: Trained ConceptBasedDecisionTree
-        true_label: Ground truth label
-        predicted_label: Model's predicted label
-        image_index: Optional index for display
     """
+    image, true_label = test_ds[image_index]
+
+    single_sample_ds = Subset(test_ds, [image_index])
+    sample_embedding = tree._get_concept_embeddings(single_sample_ds, act_path, data_label="single_test")
+
+    concept_activation = sample_embedding[0].cpu().numpy()
+
+    predicted_label = tree.predict(concept_activation.reshape(1, -1))[0]
+
+    # Get concept patches - it's called top_concept_patches in your class
+    concept_patches = tree.top_concept_patches
 
     # Get decision path
     node_path = list(tree.tree.decision_path([concept_activation]).indices)

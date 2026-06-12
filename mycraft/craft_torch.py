@@ -283,6 +283,9 @@ class Craft(BaseConceptExtractor):
                 threshold=0.5,
                 pad=2
             )
+        
+        #Normalize patches
+        patches = (patches - patches.mean()) / (patches.std() + 1e-6)
 
         # encode the patches and obtain the activations
         activations = _batch_inference(self.input_to_latent, patches, self.batch_size, image_size, 
@@ -296,7 +299,10 @@ class Craft(BaseConceptExtractor):
             activations = torch.mean(activations, dim=(2, 3))
 
         # apply NMF to the activations to obtain matrices U and W
-        reducer = NMF(n_components=self.number_of_concepts)
+        reducer = NMF(n_components=self.number_of_concepts,
+                      init='nndsvd',
+                      max_iter=1000,
+                      tol=1e-6)
         U = reducer.fit_transform(torch_to_numpy(activations))
         W = reducer.components_.astype(np.float32)
 
