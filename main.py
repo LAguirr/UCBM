@@ -7,6 +7,8 @@ from core.dataset_utils import load_data, get_mnist_loaders
 from utils.visualization import visualize_top_patches
 from mycraft.craft_torch import Craft, torch_to_numpy
 import os
+import pickle
+
 from pathlib import Path
 import torch.nn.functional as F
 from datetime import datetime
@@ -14,6 +16,7 @@ import json
 from os import path, makedirs
 from core.cbdt_layers import ConceptBasedDecisionTree, create_confusion_matrix_visualization, visualize_decision_journey
 from core.dataset_utils import images_preprocessing
+from utils.visualization import visualize_digit_seven, explain_decision_for_digit
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
@@ -77,7 +80,7 @@ if __name__ == "__main__":
     seed = 0
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dataset = "MNIST"
-    cls_save_name = "topk_seed_0"
+    save_name = "topk_seed_0"
 
     try:
         h = np.load(BASE_DIR / "craft_concept_bank.npy") #this is the h.py <----------------    10 CONCEPT BANK
@@ -128,15 +131,15 @@ if __name__ == "__main__":
     print("Evaluating Tree")
 
     # Validation
-    val_metrics = tree.evaluate(val_ds)
-    print(f"✓ Val Accuracy: {val_metrics['accuracy']*100:.2f}%")
+    #val_metrics = tree.evaluate(val_ds)
+    #print(f"✓ Val Accuracy: {val_metrics['accuracy']*100:.2f}%")
 
     # Test
-    test_metrics = tree.evaluate(test_ds)
-    print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
+    #test_metrics = tree.evaluate(test_ds)
+    #print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
 
-    print("-"*70)
-    print("Preparing Visualization of Tree Structure")
+    #print("-"*70)
+    #print("Preparing Visualization of Tree Structure")
     #tree.visualize_tree_structure(crops.shape[1:3])
 
     
@@ -147,24 +150,28 @@ if __name__ == "__main__":
     #create_confusion_matrix_visualization(test_metrics['predictions'], labels_test)
 
     #tree.tree.score(test_ds,labels_test),
-    data_dict =  {
-            'train_accuracy': train_metrics['accuracy'],
-            'val_accuracy': val_metrics['accuracy'],
-            'test_accuracy': test_metrics['accuracy'],
-    }
+    #data_dict =  {
+    #        'train_accuracy': train_metrics['accuracy'],
+    #        'val_accuracy': val_metrics['accuracy'],
+    #        'test_accuracy': test_metrics['accuracy'],
+    #}
       
-    visualize_decision_journey(test_ds, act_path, tree, image_index=0)
+    #visualize_decision_journey(test_ds, act_path, tree, image_index=0)
 
-    save_name = cls_save_name # author says is "topk_seed_0"
-    if save_name == "":
-        save_name = f"class_{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
-    else:
-        save_name += f"-{datetime.now().strftime('%Y_%m_%d_-_%H_%M_%S')}"
-    class_path = BASE_DIR / "Model" #class_path = path.join(plotter.get_classifier_path(), args.concept_data, save_name)
+    #visualize_digit_seven(tree, test_ds ,n_examples=3, act_path = act_path)
+
+    #explain_decision_for_digit(tree, act_path, test_ds)
+
+    #Save the model
+    with open('concept_decision_tree.pkl', 'wb') as f:
+        pickle.dump(tree, f)
+    print("\n✓ Tree saved to concept_decision_tree.pkl")
+
+    #Save the information about the tree and the training process
+    class_path = BASE_DIR / "Model" 
     makedirs(class_path, exist_ok=True)
-    tree.save_to_file(class_path, "classifier.pth")
-
-    info_dict = ''
+    metrics = ['acc']    
+    info_dict = tree.get_info_dict(training_data = train_ds, test_data=test_ds, val_data = val_ds, act_bank_path=act_path, images_preprocessed=images_preprocessed.shape[0], patch_size=patch_size, total_patches=crops_u.shape[0], metrics=metrics)
     print(json.dumps(info_dict, indent=2))
     with open(path.join(class_path, "info.json"), "w") as f:
         json.dump(info_dict, f, indent=2)
