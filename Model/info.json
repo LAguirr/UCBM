@@ -1,1 +1,13 @@
-""
+{
+  "amount of concepts": 30,
+  "amount of classes": 10,
+  "amount of samples": 1000,
+  "samples per class": 100,
+  "total patches": 9000,
+  "patch_size": 9,
+  "min_samples_split": 2,
+  "max_depth": 4,
+  "train acc": 0.5246071428571428,
+  "test acc": 0.5305714285714286,
+  "val_acc": 0.5204285714285715
+}

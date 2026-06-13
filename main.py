@@ -16,9 +16,13 @@ import json
 from os import path, makedirs
 from core.cbdt_layers import ConceptBasedDecisionTree, create_confusion_matrix_visualization, visualize_decision_journey
 from core.dataset_utils import images_preprocessing
-from utils.visualization import visualize_digit_seven, explain_decision_for_digit, visualize_image_concepts_with_craft
+from dotenv import load_dotenv
+load_dotenv()
+from utils.visualization import visualize_digit_seven, explain_decision_for_digit, visualize_image_concepts_with_craft, visualize_concepts_with_crops, visualize_image_concepts
+from utils.wandb_logger import log_experiment_to_wandb
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
+wandb_api_key = os.getenv("WANDB_API_KEY")
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -164,6 +168,11 @@ if __name__ == "__main__":
     
     #visualize_image_concepts_with_craft(tree, test_ds, crops, concept_activations, image_index=None, top_k=3, patch_size=9)
 
+    #visualize_concepts_with_crops(crops, concept_activations, top_k=5)
+    
+    #visualize_image_concepts(tree, test_ds, image_index=None, top_k=2, patch_size=9)
+
+    
     #Save the model
     with open('concept_decision_tree.pkl', 'wb') as f:
         pickle.dump(tree, f)
@@ -178,4 +187,10 @@ if __name__ == "__main__":
     with open(path.join(class_path, "info.json"), "w") as f:
         json.dump(info_dict, f, indent=2)
     print(f"Saved information to {class_path}")
+
+    # Log to Weights & Biases
+    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    run_id = f"CBM_Exp_{current_time}"
+    log_experiment_to_wandb("CBDT_project", run_id, info_dict, api_key=wandb_api_key)
+
     print("----------------------------------------- Tree Trained!")

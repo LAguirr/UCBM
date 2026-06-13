@@ -6,32 +6,103 @@ from torch.utils.data import  Subset
 from core.cbdt_layers import visualize_decision_journey
 
 
-def visualize_image_concepts(model, dataset, image_index=None, top_k=4, patch_size=10):
-    if image_index is None: image_index = np.random.randint(len(dataset))
+def visualize_image_concepts(model, dataset, image_index=None, top_k=5, patch_size=12):
+    """
+    Visualizes a single image and the top K concepts that activate for it,
+    showing the specific patch (crop) where each concept is looking.
+    """
+    if image_index is None:
+        image_index = np.random.randint(len(dataset))
+
     image, label = dataset[image_index]
-    image_input = image.unsqueeze(0).to(model._device)
+    image_input = image.unsqueeze(0).to(model._device) # Add batch dim
+
+    # Get Model Internals
     model._backbone.eval()
-    
+    concepts = model._h.to(model._device)
+
     with torch.no_grad():
+        # Get Spatial Features (Batch, Channels, H, W)
         feature_maps = model._backbone(image_input)
-        global_feats = feature_maps.mean(dim=(2, 3)) if feature_maps.ndim == 4 else feature_maps
-        global_feats = F.normalize(global_feats, p=2, dim=1)
-        concept_scores = torch.matmul(global_feats, model._h.T).squeeze()
+
+        # Get Global Concept Scores
+        # Pool (B, C, H, W) -> (B, C)
+        if len(feature_maps.shape) == 4:
+            global_feats = torch.mean(feature_maps, dim=(2, 3))
+        else:
+            global_feats = feature_maps
+
+        global_feats = global_feats.flatten(1)
+        global_feats = global_feats / global_feats.norm(dim=1, keepdim=True)
+
+        # Concept Scores: (1, Num_Concepts)
+        concept_scores = torch.matmul(global_feats, concepts.T).squeeze()
+
+        # Get Spatial Activation Maps for Top Concepts
+        # Sort concepts by score
         top_scores, top_indices = torch.sort(concept_scores, descending=True)
-        
-        cams = torch.einsum('bchw,kc->bkhw', feature_maps, model._h[top_indices[:top_k]])
-        cams_res = F.interpolate(cams, size=image.shape[1:], mode='bilinear')
+        top_scores = top_scores[:top_k]
+        top_indices = top_indices[:top_k]
 
-    fig, axes = plt.subplots(1, top_k + 1, figsize=(15, 3))
-    axes[0].imshow(image.squeeze(), cmap='gray'); axes[0].set_title(f"Label: {label}"); axes[0].axis('off')
+        # Calculate CAMs only for these top concepts
+        # Einsum: (1, Channels, H, W) x (K, Channels) -> (1, K, H, W)
+        relevant_concepts = concepts[top_indices]
+        cams = torch.einsum('bchw,kc->bkhw', feature_maps, relevant_concepts)
 
+        # Upsample to image size
+        cams_resized = F.interpolate(cams, size=image.shape[1:], mode='bilinear', align_corners=False)
+
+    fig, axes = plt.subplots(1, top_k + 1, figsize=(3 * (top_k + 1), 3))
+
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([axes])
+
+    # Plot Original Image
+    ax_orig = axes[0]
+    img_disp = image.permute(1, 2, 0).numpy()
+    if img_disp.shape[2] == 1:
+        ax_orig.imshow(img_disp.squeeze(), cmap='gray')
+    else:
+        ax_orig.imshow(img_disp)
+    ax_orig.set_title(f"Input: Class {label}\nIdx: {image_index}", fontsize=12)
+    ax_orig.axis('off')
+
+    # Plot Top Concepts (Crops)
     for k in range(top_k):
-        cam = cams_res[0, k]
-        h_idx, w_idx = torch.argmax(cam) // image.shape[2], torch.argmax(cam) % image.shape[2]
-        h_s, w_s = max(0, h_idx-patch_size//2), max(0, w_idx-patch_size//2)
-        patch = image[:, h_s:h_s+patch_size, w_s:w_s+patch_size]
-        axes[k+1].imshow(patch.squeeze(), cmap='gray'); axes[k+1].axis('off')
-        axes[k+1].set_title(f"C{top_indices[k]}\nS:{top_scores[k]:.2f}")
+        c_idx = top_indices[k].item()
+        score = top_scores[k].item()
+
+        # Find Hotspot (Max activation)
+        cam = cams_resized[0, k, :, :]
+        idx_flat = torch.argmax(cam)
+        h_idx, w_idx = idx_flat // image.shape[2], idx_flat % image.shape[2]
+
+        # Crop Patch
+        h_start = max(0, h_idx.item() - patch_size // 2)
+        w_start = max(0, w_idx.item() - patch_size // 2)
+        h_end = min(image.shape[1], h_start + patch_size)
+        w_end = min(image.shape[2], w_start + patch_size)
+
+        patch = image[:, h_start:h_end, w_start:w_end]
+
+        # Display Patch
+        ax = axes[k + 1]
+        patch_disp = patch.permute(1, 2, 0).numpy()
+
+        if patch_disp.shape[2] == 1:
+            ax.imshow(patch_disp.squeeze(), cmap='gray', vmin=0, vmax=1)
+        else:
+            ax.imshow(patch_disp)
+
+        ax.set_title(f"Concept {c_idx}\nScore: {score:.2f}", fontsize=10)
+        ax.axis('off')
+
+        # Add a red box on the original image to show where it looked? (Optional)
+        rect = plt.Rectangle((w_start, h_start), w_end-w_start, h_end-h_start,
+                             linewidth=1, edgecolor='red', facecolor='none')
+        ax_orig.add_patch(rect)
+
+    plt.tight_layout()
     plt.show()
 
 def visualize_top_patches(n_concepts, concept_activations, crops): 
@@ -324,6 +395,66 @@ def visualize_image_concepts_with_craft(model, dataset, crops, concept_activatio
             spine.set_edgecolor('green')
             spine.set_linewidth(2)
             spine.set_visible(True)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def visualize_concepts_with_crops(crops, concept_activations, top_k=5):
+    """
+    Visualizes the top K concepts by showing the actual crops with the highest
+    activation scores for each concept.
+
+    Args:
+        crops: Array of image patches [n_patches, H, W, C]
+        concept_activations: Array of activation scores [n_patches, n_concepts]
+        top_k: Number of top concepts to display
+    """
+
+    # Get average activation per concept across all patches
+    concept_avg_activations = concept_activations.mean(axis=0)
+
+    # Get top K concepts sorted by average activation
+    top_concept_indices = np.argsort(concept_avg_activations)[-top_k:][::-1]
+
+    fig, axes = plt.subplots(top_k, 3, figsize=(5, 3*top_k))
+
+    if axes.ndim == 1:
+        axes = axes.reshape(-1, 3)
+
+    for k, concept_idx in enumerate(top_concept_indices):
+        # Get activation scores for this concept
+        concept_scores = concept_activations[:, concept_idx]
+
+        # Find top 3 crops with highest activation
+        top_3_indices = np.argsort(concept_scores)[-3:][::-1]
+        top_3_scores = concept_scores[top_3_indices]
+
+        # Display top 3 crops
+        for col, (crop_idx, score) in enumerate(zip(top_3_indices, top_3_scores)):
+            ax = axes[k, col]
+            crop = crops[crop_idx]
+
+            # Handle both grayscale and RGB
+            if crop.ndim == 3 and crop.shape[2] == 1:
+                ax.imshow(crop.squeeze(), cmap='gray', vmin=0, vmax=1)
+            elif crop.ndim == 2:
+                ax.imshow(crop, cmap='gray', vmin=0, vmax=1)
+            else:
+                ax.imshow(crop)
+
+            ax.set_title(f"Concept {concept_idx}\nCrop #{crop_idx}\nActivation: {score:.3f}",
+                        fontsize=10, fontweight='bold' if col == 0 else 'normal')
+
+            if col == 0:
+                # Keep spines visible for the red border, turn off ticks/labels
+                ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+                for spine in ax.spines.values():
+                    spine.set_edgecolor('red')
+                    spine.set_linewidth(3)
+                    spine.set_visible(True)
+            else:
+                ax.axis('off')
 
     plt.tight_layout()
     plt.show()
