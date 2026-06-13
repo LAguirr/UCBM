@@ -41,9 +41,9 @@ class FeatureExtractorG(nn.Module):
         return x
 
 class ClassifierH(nn.Module):
-    def __init__(self, feature_extractor):
+    def __init__(self, base_model):
         super().__init__()
-        self.head = nn.Linear(feature_extractor.feat_dim, 10)
+        self.head = base_model.head
 
     def forward(self, x):
         return self.head(x.mean(dim=[2,3]))

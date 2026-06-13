@@ -120,7 +120,7 @@ class ConceptBasedDecisionTree:
 
         # --- DataLoader over (embeddings, targets) pairs ---
         dset = PDataset(embeddings, data_ds.targets[:num_embeddings])
-        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
+        data_loader = DataLoader(dset, self._batch_size, shuffle=False, num_workers=4)
 
         all_gated = []
         all_labels = []
@@ -348,7 +348,7 @@ class ConceptBasedDecisionTree:
             # Arrow starts at bottom-center of parent, ends at top-center of child
             ax.annotate(
                 '',
-                xy=(x_left, y_left - child_size + child_size),
+                xy=(x_left, y_left),
                 xytext=(x, y - node_size),
                 arrowprops=arrow_props
             )
@@ -414,7 +414,7 @@ class ConceptBasedDecisionTree:
             current_targets = all_targets
 
         # Load the concept activations.
-        embeddings = self._get_concept_embeddings(dataset, saved_activation_path)
+        embeddings = self._get_concept_embeddings(dataset, saved_activation_path, data_label)
 
 
         dset = TensorDataset(embeddings.cpu(), current_targets.cpu())

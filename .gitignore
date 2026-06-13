@@ -2,3 +2,10 @@ mnist_activations
 craft_concept_bank.npy
 classifier.pth
 .env
+wandb
+concept_decision_tree.pkl
+models
+logs
+runs
+*.pt
+

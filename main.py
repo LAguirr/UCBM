@@ -7,9 +7,14 @@ from core.dataset_utils import load_data, get_mnist_loaders
 from utils.visualization import visualize_top_patches
 from mycraft.craft_torch import Craft, torch_to_numpy
 import os
+from os import path, makedirs
 import pickle
-
+from datetime import datetime
 from pathlib import Path
+
+from dotenv import load_dotenv
+import numpy as np
+import torch
 import torch.nn.functional as F
 from datetime import datetime
 import json
@@ -61,7 +66,7 @@ if __name__ == "__main__":
     
 
     g = FeatureExtractorG(backbone).to(device)
-    h = ClassifierH(g).to(device)
+    h = ClassifierH(backbone).to(device)
 
     # 3. Concept Discovery (CRAFT)
 
@@ -89,8 +94,8 @@ if __name__ == "__main__":
     try:
         h = np.load(BASE_DIR / "craft_concept_bank.npy") #this is the h.py <----------------    10 CONCEPT BANK
         print("Concepts loaded")
-    except NameError:
-        print("No Concepts file found", NameError)
+    except FileNotFoundError as e:
+        print("No Concepts file found", e)
 
 
     h_tensor = torch.tensor(h, dtype=torch.float32)
@@ -135,21 +140,21 @@ if __name__ == "__main__":
     print("Evaluating Tree")
 
     # Validation
-    #val_metrics = tree.evaluate(val_ds)
-    #print(f"✓ Val Accuracy: {val_metrics['accuracy']*100:.2f}%")
+    val_metrics = tree.evaluate(val_ds)
+    print(f"✓ Val Accuracy: {val_metrics['accuracy']*100:.2f}%")
 
     # Test
-    #test_metrics = tree.evaluate(test_ds)
-    #print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
+    test_metrics = tree.evaluate(test_ds)
+    print(f"✓ Test Accuracy: {test_metrics['accuracy']*100:.2f}%")
 
-    #print("-"*70)
-    #print("Preparing Visualization of Tree Structure")
-    #tree.visualize_tree_structure(crops.shape[1:3])
+    print("-"*70)
+    print("Preparing Visualization of Tree Structure")
+    tree.visualize_tree_structure(crops.shape[1:3])
 
     
     
     # Visualize
-    labels_test = torch.cat([labels for _, labels in test_loader]).tolist()
+    #labels_test = torch.cat([labels for _, labels in test_loader]).tolist()
 
     #create_confusion_matrix_visualization(test_metrics['predictions'], labels_test)
 
