@@ -16,7 +16,7 @@ import json
 from os import path, makedirs
 from core.cbdt_layers import ConceptBasedDecisionTree, create_confusion_matrix_visualization, visualize_decision_journey
 from core.dataset_utils import images_preprocessing
-from utils.visualization import visualize_digit_seven, explain_decision_for_digit
+from utils.visualization import visualize_digit_seven, explain_decision_for_digit, visualize_image_concepts_with_craft
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"   # Suppress TensorFlow logs
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"  # Disable oneDNN warnings
 
@@ -161,6 +161,8 @@ if __name__ == "__main__":
     #visualize_digit_seven(tree, test_ds ,n_examples=3, act_path = act_path)
 
     #explain_decision_for_digit(tree, act_path, test_ds)
+    
+    #visualize_image_concepts_with_craft(tree, test_ds, crops, concept_activations, image_index=None, top_k=3, patch_size=9)
 
     #Save the model
     with open('concept_decision_tree.pkl', 'wb') as f:
