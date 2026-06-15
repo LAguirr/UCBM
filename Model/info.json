@@ -6,8 +6,8 @@
   "total patches": 9000,
   "patch_size": 9,
   "min_samples_split": 2,
-  "max_depth": 4,
-  "train acc": 0.5514642857142857,
-  "test acc": 0.5518571428571428,
-  "val_acc": 0.5388571428571428
+  "max_depth": 12,
+  "train acc": 0.9020357142857143,
+  "test acc": 0.86,
+  "val_acc": 0.8547142857142858
 }

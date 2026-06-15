@@ -7,6 +7,8 @@ from core.dataset_utils import load_data, get_mnist_loaders
 from utils.visualization import visualize_top_patches
 from mycraft.craft_torch import Craft, torch_to_numpy
 import os
+import matplotlib
+#matplotlib.use('Agg')
 from os import path, makedirs
 import pickle
 from datetime import datetime
@@ -123,7 +125,7 @@ if __name__ == "__main__":
             crops=crops,  # Use training crops
             concept_activations=concept_activations,  # For extracting top patches
             act_path=act_path,
-            max_depth=4,
+            max_depth=12,
             min_samples_split=2,
             device=device,
             batch_size=64
@@ -149,7 +151,7 @@ if __name__ == "__main__":
 
     print("-"*70)
     print("Preparing Visualization of Tree Structure")
-    tree.visualize_tree_structure(crops.shape[1:3])
+    #tree.visualize_tree_structure(crops.shape[1:3])
 
     
     
@@ -165,7 +167,7 @@ if __name__ == "__main__":
     #        'test_accuracy': test_metrics['accuracy'],
     #}
       
-    #visualize_decision_journey(test_ds, act_path, tree, image_index=0)
+    visualize_decision_journey(test_ds, act_path, tree, image_index=0)
 
     #visualize_digit_seven(tree, test_ds ,n_examples=3, act_path = act_path)
 
@@ -194,8 +196,8 @@ if __name__ == "__main__":
     print(f"Saved information to {class_path}")
 
     # Log to Weights & Biases
-    current_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
-    run_id = f"CBM_Exp_{current_time}"
-    log_experiment_to_wandb("CBDT_project", run_id, info_dict, api_key=wandb_api_key)
+    #current_time = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    #run_id = f"CBM_Exp_{current_time}"
+    #log_experiment_to_wandb("CBDT_project", run_id, info_dict, api_key=wandb_api_key)
 
     print("----------------------------------------- Tree Trained!")

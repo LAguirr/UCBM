@@ -120,7 +120,7 @@ class ConceptBasedDecisionTree:
 
         # --- DataLoader over (embeddings, targets) pairs ---
         dset = PDataset(embeddings, data_ds.targets[:num_embeddings])
-        data_loader = DataLoader(dset, self._batch_size, shuffle=False, num_workers=4)
+        data_loader = DataLoader(dset, self._batch_size, shuffle=False, num_workers=0)
 
         all_gated = []
         all_labels = []
@@ -128,7 +128,6 @@ class ConceptBasedDecisionTree:
         with torch.no_grad():
             for X_batch, y_batch in tqdm(data_loader, leave=False):
                 X_batch = X_batch.to(self._device)
-                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
                 after_gate = X_batch.detach()
 
 
@@ -173,7 +172,7 @@ class ConceptBasedDecisionTree:
 
         num_embeddings = len(embeddings)
         dset = PDataset(embeddings, data_ds.targets[:num_embeddings])
-        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=4)
+        data_loader = DataLoader(dset, self._batch_size, shuffle=True, num_workers=0)
 
         all_gated = []
         all_labels = []
@@ -181,7 +180,6 @@ class ConceptBasedDecisionTree:
         with torch.no_grad():
             for X_batch, y_batch in tqdm(data_loader, leave=False):
                 X_batch = X_batch.to(self._device)
-                X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
                 after_gate = X_batch.detach()
                 all_gated.append(after_gate.cpu())
                 all_labels.append(y_batch.cpu())
@@ -418,14 +416,13 @@ class ConceptBasedDecisionTree:
 
 
         dset = TensorDataset(embeddings.cpu(), current_targets.cpu())
-        data_loader = DataLoader(dset, batch_size=self._batch_size, shuffle=False, num_workers=4)
+        data_loader = DataLoader(dset, batch_size=self._batch_size, shuffle=False, num_workers=0)
 
         y_pred = []
         y_true = []
 
         for X_batch, y_batch in data_loader:
             X_batch = X_batch.to(self._device)
-            X_batch = (X_batch - X_batch.mean(dim=0)) / (X_batch.std(dim=0) + 1e-8)
             after_gate = X_batch.detach()
 
             y_pred.append(after_gate.cpu())
@@ -542,9 +539,12 @@ def visualize_decision_journey(
     node_path = list(tree.tree.decision_path([concept_activation]).indices)
     feature_values, tree_prediction = None, None
 
-    # Prepare figure
-    fig = plt.figure(figsize=(16, 10))
-    gs = fig.add_gridspec(3, 4, hspace=0.5, wspace=0.4)
+    # Prepare figure dynamically based on path length
+    n_nodes = len(node_path)
+    n_decision_rows = int(np.ceil(n_nodes / 4))
+    total_rows = 2 + n_decision_rows
+    fig = plt.figure(figsize=(16, 3 * total_rows + 1))
+    gs = fig.add_gridspec(total_rows, 4, hspace=0.5, wspace=0.4)
 
     # ============ Top Left: Original Image ============
     ax_img = fig.add_subplot(gs[0, 0])
@@ -625,7 +625,7 @@ def visualize_decision_journey(
             ax.axis('off')
 
     # ============ Bottom: Decision Path Summary ============
-    ax_summary = fig.add_subplot(gs[2, :])
+    ax_summary = fig.add_subplot(gs[total_rows - 1, :])
     ax_summary.axis('off')
 
     path_text = "DECISION PATH:\n"
